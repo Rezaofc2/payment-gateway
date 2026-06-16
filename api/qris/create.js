@@ -82,61 +82,6 @@ async function checkExistingPayments(ordId, ordApikey) {
   }
 }
 
-async function findUniqueAmount(baseAmount, ordId, ordApikey) {
-  let amount = baseAmount
-  let attempts = 0
-  const maxAttempts = 100 // Prevent infinite loop
-
-  console.log("▶ Finding unique amount, base amount:", baseAmount)
-
-  // Get existing payments from OrderKuota API
-  const existingAmounts = await checkExistingPayments(ordId, ordApikey)
-
-  // Also check global memory for pending transactions
-  const pendingAmounts = []
-  if (global.transactions && global.transactions.size > 0) {
-    for (const [transactionId, transaction] of global.transactions) {
-      if (transaction.status === "pending") {
-        pendingAmounts.push(transaction.amount)
-      }
-    }
-  }
-
-  console.log("▶ Pending amounts in memory:", pendingAmounts)
-
-  // Combine both sources
-  const allExistingAmounts = [...existingAmounts, ...pendingAmounts]
-  console.log("▶ All existing amounts to check:", allExistingAmounts)
-
-  while (attempts < maxAttempts) {
-    // Check if this amount exists in existing payments or pending transactions
-    const amountExists = allExistingAmounts.includes(amount)
-
-    if (!amountExists) {
-      console.log("✓ Found unique amount:", amount, "(original:", baseAmount, ", attempts:", attempts, ")")
-      return {
-        finalAmount: amount,
-        wasAdjusted: amount !== baseAmount,
-        adjustedBy: amount - baseAmount,
-      }
-    }
-
-    console.log("▷ Amount", amount, "exists, trying", amount + 1, "... (attempt", attempts + 1, ")")
-    amount += 1
-    attempts += 1
-  }
-
-  // If we can't find unique amount after max attempts, use random suffix
-  const randomSuffix = Math.floor(Math.random() * 1000) + 100
-  const finalAmount = baseAmount + randomSuffix
-  console.log("⚠ Max attempts reached, using random amount:", finalAmount)
-
-  return {
-    finalAmount: finalAmount,
-    wasAdjusted: true,
-    adjustedBy: finalAmount - baseAmount,
-  }
-}
 
 async function createQRIS(amount, codeqr) {
   try {
@@ -242,50 +187,15 @@ module.exports = (app) => {
           message: "Jumlah harus diisi dan lebih dari 0",
         })
       }
-
-      // Check environment variables
-      const codeqr = process.env.CODEQR
-      const ordId = process.env.ORD_ID
-      const ordApikey = process.env.ORD_APIKEY
-
-      console.log("▶ Environment check:", {
-        codeqr: codeqr ? `Available (${codeqr.length} chars)` : "Missing",
-        ordId: ordId ? "Available" : "Missing",
-        ordApikey: ordApikey ? "Available" : "Missing",
-      })
-
-      if (!codeqr) {
-        console.log("✗ CODEQR environment variable not found")
-        return res.status(500).json({
-          status: false,
-          message: "Konfigurasi QRIS tidak ditemukan. Pastikan CODEQR sudah diset di file .env",
-          debug: "CODEQR environment variable is missing",
-        })
-      }
-
-      if (!ordId || !ordApikey) {
-        console.log("✗ OrderKuota credentials missing")
-        return res.status(500).json({
-          status: false,
-          message: "Konfigurasi OrderKuota tidak ditemukan. Pastikan ORD_ID dan ORD_APIKEY sudah diset di file .env",
-          debug: "OrderKuota credentials missing",
-        })
-      }
+l
 
       // Find unique amount by checking OrderKuota API first
-      console.log("▶ Checking for duplicate amounts via OrderKuota API...")
-      const amountResult = await findUniqueAmount(amount, ordId, ordApikey)
-      const finalAmount = amountResult.finalAmount
+      
 
-      console.log("▶ Amount processing result:", {
-        originalAmount: amount,
-        finalAmount: amountResult.finalAmount,
-        wasAdjusted: amountResult.wasAdjusted,
-        adjustedBy: amountResult.adjustedBy,
-      })
+      
 
       // Create QRIS with final amount
-      const qrisResult = await createQRIS(finalAmount, codeqr)
+      const qrisResult = await createQRIS(amount, "00020101021126610014COM.GO-JEK.WWW01189360091434912202130210G4912202130303UMI51440014ID.CO.QRIS.WWW0215ID10243554709300303UMI5204581553033605802ID5914Reza, Ponorogo6008PONOROGO61056345562070703A0163041BA6")
 
       // Store transaction in memory
       global.transactions.set(qrisResult.idtransaksi, {
@@ -301,7 +211,6 @@ module.exports = (app) => {
       console.log("✓ QRIS Created Successfully:")
       console.log("   ID:", qrisResult.idtransaksi)
       console.log("   Original Amount: Rp", amount.toLocaleString("id-ID"))
-      console.log("   Final Amount: Rp", finalAmount.toLocaleString("id-ID"))
       console.log("   Amount Adjusted:", amountResult.wasAdjusted ? "Yes" : "No")
       console.log("   Adjustment: +", amountResult.adjustedBy)
       console.log("   Image URL Length:", qrisResult.imageqris.url.length)
